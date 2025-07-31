@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ECharts测试</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+</head>
+<body>
+    <div id="chart" style="width: 800px; height: 400px; margin: 50px auto;"></div>
+    
+    <script>
+        // 初始化图表
+        const chartDom = document.getElementById('chart');
+        const myChart = echarts.init(chartDom);
+
+        // 测试数据
+        const testData = [
+            { timestamp: '2025-07-28T00:00:00Z', price: 0.017 },
+            { timestamp: '2025-07-28T01:00:00Z', price: 0.017 },
+            { timestamp: '2025-07-28T02:00:00Z', price: 0.017 },
+            { timestamp: '2025-07-28T03:00:00Z', price: 0.017 },
+            { timestamp: '2025-07-28T04:00:00Z', price: 0.017 }
+        ];
+
+        const timestamps = testData.map(item => {
+            const date = new Date(item.timestamp);
+            return date.toLocaleString('zh-CN', {
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        });
+
+        const prices = testData.map(item => item.price);
+
+        console.log('测试时间戳:', timestamps);
+        console.log('测试价格:', prices);
+
+        const option = {
+            title: {
+                text: 'ECharts测试 - 抢占式实例价格趋势',
+                left: 'center'
+            },
+            tooltip: {
+                trigger: 'axis',
+                formatter: function(params) {
+                    return params[0].name + '<br/>' + 
+                           params[0].seriesName + ': ' + params[0].value + ' 元/小时';
+                }
+            },
+            xAxis: {
+                type: 'category',
+                data: timestamps,
+                axisLabel: {
+                    rotate: 45
+                }
+            },
+            yAxis: {
+                type: 'value',
+                name: '价格 (元/小时)',
+                axisLabel: {
+                    formatter: '{value} 元'
+                },
+                min: 0.016,
+                max: 0.018,
+                interval: 0.001
+            },
+            series: [{
+                name: '价格趋势',
+                type: 'line',
+                data: prices,
+                smooth: true,
+                symbol: 'circle',
+                symbolSize: 6,
+                lineStyle: {
+                    width: 3,
+                    color: '#5470c6'
+                },
+                itemStyle: {
+                    color: '#5470c6'
+                }
+            }],
+            color: ['#5470c6']
+        };
+
+        myChart.setOption(option);
+        console.log('ECharts图表已渲染');
+    </script>
+</body>
+</html> 
