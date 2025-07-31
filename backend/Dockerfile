@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y \
 
 # 复制requirements.txt并安装Python依赖
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt  --index-url=https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 复制应用代码
 COPY . .
