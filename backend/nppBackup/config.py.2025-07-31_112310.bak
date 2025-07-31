@@ -1,6 +1,6 @@
 # 阿里云API配置
-ACCESS_KEY = "your_access_key_id"
-ACCESS_SECRET = "your_access_key_secret"
+ACCESS_KEY = "LTAI5t9j6pnz1wuX3XkitZSF"
+ACCESS_SECRET = "kyd266mkiLGRVyOatBFpqLrwdZcUgd"
 
 # 默认配置
 DEFAULT_REGION = "cn-hangzhou"
