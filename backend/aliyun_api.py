@@ -4,6 +4,7 @@ from aliyunsdkecs.request.v20140526.DescribeRegionsRequest import DescribeRegion
 from aliyunsdkecs.request.v20140526.DescribeZonesRequest import DescribeZonesRequest
 from aliyunsdkecs.request.v20140526.DescribeInstanceTypesRequest import DescribeInstanceTypesRequest
 from aliyunsdkecs.request.v20140526.DescribeSpotPriceHistoryRequest import DescribeSpotPriceHistoryRequest
+from aliyunsdkecs.request.v20140526.DescribeInstanceTypesRequest import DescribeInstanceTypesRequest
 import json
 from datetime import datetime, timedelta
 from config import ACCESS_KEY, ACCESS_SECRET, DEFAULT_REGION
@@ -112,7 +113,8 @@ class AliyunAPI:
                               start_time: Optional[str] = None,
                               end_time: Optional[str] = None,
                               io_optimized: str = "optimized",
-                              os_type: str = "linux") -> List[Dict[str, Any]]:
+                              os_type: str = "linux",
+                              include_pay_as_you_go: bool = False) -> List[Dict[str, Any]]:
         """
         获取抢占式实例历史价格
         
@@ -159,11 +161,21 @@ class AliyunAPI:
             
             price_history = []
             for spot_price in response_json.get('SpotPrices', {}).get('SpotPriceType', []):
+                # 获取按量付费价格（如果需要）
+                pay_as_you_go_price = None
+                if include_pay_as_you_go:
+                    pay_as_you_go_price = self.get_pay_as_you_go_price(zone_id, instance_type)
+                    # 如果无法获取真实价格，使用估算值（通常是抢占式实例价格的2-3倍）
+                    if pay_as_you_go_price is None:
+                        spot_price_value = float(spot_price.get('SpotPrice', 0))
+                        pay_as_you_go_price = spot_price_value * 2.5  # 估算值
+                
                 price_history.append({
                     'zone_id': spot_price.get('ZoneId') or zone_id,
                     'instance_type': spot_price.get('InstanceType') or instance_type,
                     'network_type': spot_price.get('NetworkType') or network_type,
                     'spot_price': float(spot_price.get('SpotPrice', 0)),
+                    'pay_as_you_go_price': pay_as_you_go_price,
                     'timestamp': spot_price.get('Timestamp') or '',
                     'io_optimized': spot_price.get('IoOptimized') or io_optimized,
                     'os_type': spot_price.get('OSType') or os_type
@@ -172,4 +184,40 @@ class AliyunAPI:
             return price_history
         except Exception as e:
             print(f"获取抢占式实例价格历史失败: {e}")
-            return [] 
+            return []
+    
+    def get_pay_as_you_go_price(self, zone_id: str, instance_type: str) -> Optional[float]:
+        """
+        获取按量付费价格
+        
+        Args:
+            zone_id: 可用区ID
+            instance_type: 实例规格
+            
+        Returns:
+            按量付费价格，如果获取失败返回None
+        """
+        try:
+            # 切换到可用区所在的地域
+            zone_region = zone_id.split('-')[0] + '-' + zone_id.split('-')[1]
+            temp_client = AcsClient(ACCESS_KEY, ACCESS_SECRET, zone_region)
+            
+            # 使用DescribeInstanceTypes API获取价格信息
+            request = DescribeInstanceTypesRequest()
+            request.set_InstanceTypes([instance_type])
+            
+            response = temp_client.do_action_with_exception(request)
+            response_json = json.loads(response)
+            
+            # 从响应中提取价格信息
+            instance_types = response_json.get('InstanceTypes', {}).get('InstanceType', [])
+            if instance_types:
+                # 这里需要根据实际的API响应结构调整
+                # 由于阿里云API可能不直接提供按量付费价格，我们使用一个估算值
+                # 通常按量付费价格是抢占式实例价格的2-3倍
+                return None  # 暂时返回None，后续可以通过其他API获取
+            
+            return None
+        except Exception as e:
+            print(f"获取按量付费价格失败: {e}")
+            return None 

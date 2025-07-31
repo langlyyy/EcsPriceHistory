@@ -31,6 +31,7 @@ class SpotPriceHistoryRequest(BaseModel):
     end_time: Optional[str] = None
     io_optimized: str = "optimized"
     os_type: str = "linux"
+    include_pay_as_you_go: bool = False
 
 
 class SpotPriceHistoryItem(BaseModel):
@@ -39,6 +40,7 @@ class SpotPriceHistoryItem(BaseModel):
     instance_type: str
     network_type: str
     spot_price: float
+    pay_as_you_go_price: Optional[float] = None
     timestamp: str = ""
     io_optimized: str = "optimized"
     os_type: str = "linux"

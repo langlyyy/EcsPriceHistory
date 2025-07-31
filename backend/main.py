@@ -93,7 +93,8 @@ async def get_spot_price_history(request: SpotPriceHistoryRequest):
                 start_time=request.start_time,
                 end_time=request.end_time,
                 io_optimized=request.io_optimized,
-                os_type=request.os_type
+                os_type=request.os_type,
+                include_pay_as_you_go=request.include_pay_as_you_go
             )
             all_price_history.extend(price_history)
         

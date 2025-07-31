@@ -49,11 +49,15 @@
                 v-model="queryForm.instanceTypes" 
                 placeholder="请选择实例规格"
                 multiple
+                filterable
+                clearable
                 style="width: 100%"
                 :disabled="!queryForm.regionId"
+                :filter-method="filterInstanceTypes"
+                :reserve-keyword="false"
               >
                 <el-option
-                  v-for="instance in instanceTypes"
+                  v-for="instance in filteredInstanceTypes"
                   :key="instance.instance_type_id"
                   :label="`${instance.instance_type_id} (${instance.cpu_core_count}核${instance.memory_size}GB)`"
                   :value="instance.instance_type_id"
@@ -84,6 +88,15 @@
                 end-placeholder="结束时间"
                 format="YYYY-MM-DD HH:mm:ss"
                 value-format="YYYY-MM-DDTHH:mm:ss[Z]"
+                style="width: 100%"
+              />
+            </el-form-item>
+
+            <el-form-item label="显示对比">
+              <el-switch
+                v-model="queryForm.includePayAsYouGo"
+                active-text="显示按量付费价格"
+                inactive-text="仅显示抢占式价格"
                 style="width: 100%"
               />
             </el-form-item>
@@ -185,20 +198,32 @@
                  >
                    <div class="instance-stat-card">
                      <div class="instance-name">{{ stat.instanceType }}</div>
-                     <div class="instance-stats">
-                       <div class="instance-stat-item">
-                         <span class="stat-label">最低:</span>
-                         <span class="stat-value">{{ stat.minPrice }}元</span>
-                       </div>
-                       <div class="instance-stat-item">
-                         <span class="stat-label">最高:</span>
-                         <span class="stat-value">{{ stat.maxPrice }}元</span>
-                       </div>
-                       <div class="instance-stat-item">
-                         <span class="stat-label">平均:</span>
-                         <span class="stat-value">{{ stat.avgPrice }}元</span>
-                       </div>
-                     </div>
+                                           <div class="instance-stats">
+                        <div class="instance-stat-item">
+                          <span class="stat-label">抢占式最低:</span>
+                          <span class="stat-value">{{ stat.spotMinPrice }}元</span>
+                        </div>
+                        <div class="instance-stat-item">
+                          <span class="stat-label">抢占式最高:</span>
+                          <span class="stat-value">{{ stat.spotMaxPrice }}元</span>
+                        </div>
+                        <div class="instance-stat-item">
+                          <span class="stat-label">抢占式平均:</span>
+                          <span class="stat-value">{{ stat.spotAvgPrice }}元</span>
+                        </div>
+                        <div v-if="stat.payAsYouGoMinPrice" class="instance-stat-item">
+                          <span class="stat-label">按量付费最低:</span>
+                          <span class="stat-value pay-as-you-go">{{ stat.payAsYouGoMinPrice }}元</span>
+                        </div>
+                        <div v-if="stat.payAsYouGoMaxPrice" class="instance-stat-item">
+                          <span class="stat-label">按量付费最高:</span>
+                          <span class="stat-value pay-as-you-go">{{ stat.payAsYouGoMaxPrice }}元</span>
+                        </div>
+                        <div v-if="stat.payAsYouGoAvgPrice" class="instance-stat-item">
+                          <span class="stat-label">按量付费平均:</span>
+                          <span class="stat-value pay-as-you-go">{{ stat.payAsYouGoAvgPrice }}元</span>
+                        </div>
+                      </div>
                    </div>
                  </el-col>
                </el-row>
@@ -250,6 +275,7 @@ export default {
     const regions = ref([])
     const zones = ref([])
     const instanceTypes = ref([])
+    const filteredInstanceTypes = ref([])
     const priceData = ref([])
     const loading = ref(false)
     const timeRange = ref([])
@@ -262,7 +288,8 @@ export default {
       instanceTypes: [],
       networkType: 'vpc',
       osType: 'linux',
-      ioOptimized: 'optimized'
+      ioOptimized: 'optimized',
+      includePayAsYouGo: false
     })
 
     const loadRegions = async () => {
@@ -279,6 +306,7 @@ export default {
       queryForm.instanceTypes = []
       zones.value = []
       instanceTypes.value = []
+      filteredInstanceTypes.value = []
 
       if (queryForm.regionId) {
         try {
@@ -288,9 +316,27 @@ export default {
           ])
           zones.value = zonesData
           instanceTypes.value = instanceTypesData
+          filteredInstanceTypes.value = instanceTypesData
         } catch (error) {
           ElMessage.error('加载地域数据失败')
         }
+      }
+    }
+
+    const filterInstanceTypes = (query) => {
+      if (query === '') {
+        filteredInstanceTypes.value = instanceTypes.value
+      } else {
+        filteredInstanceTypes.value = instanceTypes.value.filter(instance => {
+          const searchText = query.toLowerCase()
+          const instanceId = instance.instance_type_id.toLowerCase()
+          const cpuCore = instance.cpu_core_count.toString()
+          const memorySize = instance.memory_size.toString()
+          
+          return instanceId.includes(searchText) || 
+                 cpuCore.includes(searchText) || 
+                 memorySize.includes(searchText)
+        })
       }
     }
 
@@ -314,7 +360,8 @@ export default {
           instance_types: queryForm.instanceTypes,
           network_type: queryForm.networkType,
           os_type: queryForm.osType,
-          io_optimized: queryForm.ioOptimized
+          io_optimized: queryForm.ioOptimized,
+          include_pay_as_you_go: queryForm.includePayAsYouGo
         }
 
         if (timeRange.value && timeRange.value.length === 2) {
@@ -388,25 +435,34 @@ export default {
       
       // 按实例规格分组数据
       const groupedData = {}
+      const payAsYouGoData = {}
       const allTimestamps = new Set()
       
       priceData.value.forEach(item => {
         if (!groupedData[item.instance_type]) {
           groupedData[item.instance_type] = []
+          payAsYouGoData[item.instance_type] = []
         }
         groupedData[item.instance_type].push({
           timestamp: item.timestamp,
           price: item.spot_price
         })
+        if (item.pay_as_you_go_price) {
+          payAsYouGoData[item.instance_type].push({
+            timestamp: item.timestamp,
+            price: item.pay_as_you_go_price
+          })
+        }
         allTimestamps.add(item.timestamp)
       })
 
       // 排序时间戳
       const sortedTimestamps = Array.from(allTimestamps).sort((a, b) => new Date(a) - new Date(b))
       
-             // 生成图表系列数据
-       const series = []
-       const colors = ['#409eff', '#67c23a', '#e6a23c', '#f56c6c', '#909399', '#9c27b0', '#ff9800', '#795548', '#2196f3', '#4caf50']
+      // 生成图表系列数据
+      const series = []
+      const colors = ['#409eff', '#67c23a', '#e6a23c', '#f56c6c', '#909399', '#9c27b0', '#ff9800', '#795548', '#2196f3', '#4caf50']
+      const payAsYouGoColors = ['#ff6b6b', '#ff8e8e', '#ffb3b3', '#ffd6d6', '#ffe6e6', '#ff9999', '#ffcccc', '#ffb366', '#ffcc99', '#ffdb4d']
       
       Object.keys(groupedData).forEach((instanceType, index) => {
         const data = groupedData[instanceType]
@@ -420,37 +476,67 @@ export default {
           return dataPoint ? dataPoint.price : null
         })
 
-                 series.push({
-           name: instanceType,
-           type: 'line',
-           data: seriesData,
-           smooth: true,
-           symbol: 'circle',
-           symbolSize: 8,
-           lineStyle: {
-             width: 4,
-             color: colors[index % colors.length]
-           },
-           itemStyle: {
-             color: colors[index % colors.length],
-             borderColor: colors[index % colors.length],
-             borderWidth: 3
-           },
-           areaStyle: {
-             color: {
-               type: 'linear',
-               x: 0,
-               y: 0,
-               x2: 0,
-               y2: 1,
-               colorStops: [{
-                 offset: 0, color: colors[index % colors.length] + '30' // 30%透明度
-               }, {
-                 offset: 1, color: colors[index % colors.length] + '05' // 5%透明度
-               }]
-             }
-           }
-         })
+        // 添加抢占式实例价格线
+        series.push({
+          name: `${instanceType} (抢占式)`,
+          type: 'line',
+          data: seriesData,
+          smooth: true,
+          symbol: 'circle',
+          symbolSize: 8,
+          lineStyle: {
+            width: 4,
+            color: colors[index % colors.length]
+          },
+          itemStyle: {
+            color: colors[index % colors.length],
+            borderColor: colors[index % colors.length],
+            borderWidth: 3
+          },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [{
+                offset: 0, color: colors[index % colors.length] + '30' // 30%透明度
+              }, {
+                offset: 1, color: colors[index % colors.length] + '05' // 5%透明度
+              }]
+            }
+          }
+        })
+
+        // 如果启用了按量付费价格对比，添加按量付费价格线
+        if (queryForm.includePayAsYouGo && payAsYouGoData[instanceType] && payAsYouGoData[instanceType].length > 0) {
+          const payAsYouGoSortedData = payAsYouGoData[instanceType].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+          
+          const payAsYouGoSeriesData = sortedTimestamps.map(timestamp => {
+            const dataPoint = payAsYouGoSortedData.find(item => item.timestamp === timestamp)
+            return dataPoint ? dataPoint.price : null
+          })
+
+          series.push({
+            name: `${instanceType} (按量付费)`,
+            type: 'line',
+            data: payAsYouGoSeriesData,
+            smooth: true,
+            symbol: 'diamond',
+            symbolSize: 6,
+            lineStyle: {
+              width: 3,
+              color: payAsYouGoColors[index % payAsYouGoColors.length],
+              type: 'dashed'
+            },
+            itemStyle: {
+              color: payAsYouGoColors[index % payAsYouGoColors.length],
+              borderColor: payAsYouGoColors[index % payAsYouGoColors.length],
+              borderWidth: 2
+            }
+          })
+        }
       })
 
       console.log('分组数据:', groupedData)
@@ -459,7 +545,7 @@ export default {
 
              const option = {
          title: {
-           text: '抢占式实例价格趋势对比',
+           text: queryForm.includePayAsYouGo ? '实例价格趋势对比 (抢占式 vs 按量付费)' : '抢占式实例价格趋势对比',
            left: 'center',
            top: 20,
            textStyle: {
@@ -476,32 +562,34 @@ export default {
           textStyle: {
             color: '#333'
           },
-          formatter: function(params) {
-            let result = `<div style="padding: 8px;">
-              <div style="font-weight: bold; margin-bottom: 8px; color: #2c3e50;">${params[0].name}</div>`
-            
-            params.forEach(param => {
-              if (param.value !== null) {
-                result += `<div style="color: #666; margin-bottom: 4px;">
-                  <span style="display: inline-block; width: 12px; height: 12px; background: ${param.color}; margin-right: 8px; border-radius: 2px;"></span>
-                  ${param.seriesName}: <span style="color: #409eff; font-weight: bold;">${param.value} 元/小时</span>
-                </div>`
-              }
-            })
-            
-            result += '</div>'
-            return result
-          }
+                     formatter: function(params) {
+             let result = `<div style="padding: 8px;">
+               <div style="font-weight: bold; margin-bottom: 8px; color: #2c3e50;">${params[0].name}</div>`
+             
+             params.forEach(param => {
+               if (param.value !== null) {
+                 const priceType = param.seriesName.includes('按量付费') ? '按量付费' : '抢占式'
+                 const priceColor = param.seriesName.includes('按量付费') ? '#ff6b6b' : '#409eff'
+                 result += `<div style="color: #666; margin-bottom: 4px;">
+                   <span style="display: inline-block; width: 12px; height: 12px; background: ${param.color}; margin-right: 8px; border-radius: 2px;"></span>
+                   ${param.seriesName}: <span style="color: ${priceColor}; font-weight: bold;">${param.value} 元/小时</span>
+                 </div>`
+               }
+             })
+             
+             result += '</div>'
+             return result
+           }
         },
-                 legend: {
-           data: Object.keys(groupedData),
-           top: 60,
-           textStyle: {
-             color: '#666',
-             fontSize: 14
-           },
-           itemGap: 30
-         },
+                                   legend: {
+            data: series.map(s => s.name),
+            top: 60,
+            textStyle: {
+              color: '#666',
+              fontSize: 14
+            },
+            itemGap: 30
+          },
                  grid: {
            left: '5%',
            right: '5%',
@@ -591,24 +679,45 @@ export default {
       if (!priceData.value.length) return []
       
       const groupedData = {}
+      const payAsYouGoData = {}
+      
       priceData.value.forEach(item => {
         if (!groupedData[item.instance_type]) {
           groupedData[item.instance_type] = []
+          payAsYouGoData[item.instance_type] = []
         }
         groupedData[item.instance_type].push(item.spot_price)
+        if (item.pay_as_you_go_price) {
+          payAsYouGoData[item.instance_type].push(item.pay_as_you_go_price)
+        }
       })
       
       return Object.keys(groupedData).map(instanceType => {
-        const prices = groupedData[instanceType]
-        const min = Math.min(...prices)
-        const max = Math.max(...prices)
-        const avg = prices.reduce((acc, price) => acc + price, 0) / prices.length
+        const spotPrices = groupedData[instanceType]
+        const payAsYouGoPrices = payAsYouGoData[instanceType]
+        
+        const spotMin = Math.min(...spotPrices)
+        const spotMax = Math.max(...spotPrices)
+        const spotAvg = spotPrices.reduce((acc, price) => acc + price, 0) / spotPrices.length
+        
+        let payAsYouGoMin = null
+        let payAsYouGoMax = null
+        let payAsYouGoAvg = null
+        
+        if (payAsYouGoPrices.length > 0) {
+          payAsYouGoMin = Math.min(...payAsYouGoPrices)
+          payAsYouGoMax = Math.max(...payAsYouGoPrices)
+          payAsYouGoAvg = payAsYouGoPrices.reduce((acc, price) => acc + price, 0) / payAsYouGoPrices.length
+        }
         
         return {
           instanceType,
-          minPrice: min.toFixed(3),
-          maxPrice: max.toFixed(3),
-          avgPrice: avg.toFixed(3)
+          spotMinPrice: spotMin.toFixed(3),
+          spotMaxPrice: spotMax.toFixed(3),
+          spotAvgPrice: spotAvg.toFixed(3),
+          payAsYouGoMinPrice: payAsYouGoMin ? payAsYouGoMin.toFixed(3) : null,
+          payAsYouGoMaxPrice: payAsYouGoMax ? payAsYouGoMax.toFixed(3) : null,
+          payAsYouGoAvgPrice: payAsYouGoAvg ? payAsYouGoAvg.toFixed(3) : null
         }
       })
     })
@@ -638,6 +747,7 @@ export default {
       regions,
       zones,
       instanceTypes,
+      filteredInstanceTypes,
       priceData,
       loading,
       timeRange,
@@ -648,6 +758,7 @@ export default {
       avgPrice,
       instanceStats,
       handleRegionChange,
+      filterInstanceTypes,
       queryPrices,
       exportData,
       clearChart
@@ -813,11 +924,15 @@ export default {
   font-weight: 500;
 }
 
-.instance-stat-item .stat-value {
-  color: #409eff;
-  font-weight: 600;
-  font-size: 14px;
-}
+ .instance-stat-item .stat-value {
+   color: #409eff;
+   font-weight: 600;
+   font-size: 14px;
+ }
+
+ .instance-stat-item .stat-value.pay-as-you-go {
+   color: #ff6b6b;
+ }
 
 .chart-container {
   min-height: 700px;
