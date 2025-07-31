@@ -129,7 +129,7 @@
                   @click="exportData"
                   :disabled="!priceData.length"
                 >
-                  导出数据
+                  导出图表
                 </el-button>
                 <el-button 
                   type="warning" 
@@ -258,6 +258,8 @@ import {
   GridComponent
 } from 'echarts/components'
 import dayjs from 'dayjs'
+import html2canvas from 'html2canvas'
+import jsPDF from 'jspdf'
 
 // 注册ECharts组件
 echarts.use([
@@ -402,8 +404,51 @@ export default {
       }
     }
 
-    const exportData = () => {
-      ElMessage.info('导出功能待实现')
+    const exportData = async () => {
+      if (!priceData.value.length) {
+        ElMessage.warning('暂无数据，无法导出！')
+        return
+      }
+      // 选取需要导出的区域
+      const card = document.querySelector('.chart-panel')
+      if (!card) {
+        ElMessage.error('未找到导出区域')
+        return
+      }
+      ElMessage.info('正在生成PDF，请稍候...')
+      try {
+        // 截图整个卡片区域
+        const canvas = await html2canvas(card, { useCORS: true, scale: 2 })
+        const imgData = canvas.toDataURL('image/png')
+        // 创建PDF
+        const pdf = new jsPDF('l', 'mm', 'a4')
+        // 计算图片宽高适配A4纸
+        const pageWidth = pdf.internal.pageSize.getWidth()
+        const pageHeight = pdf.internal.pageSize.getHeight()
+        const imgWidth = pageWidth
+        const imgHeight = canvas.height * (pageWidth / canvas.width)
+        let position = 0
+        // 多页处理
+        if (imgHeight < pageHeight) {
+          pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight)
+        } else {
+          let leftHeight = imgHeight
+          let pageData = canvas
+          let y = 0
+          while (leftHeight > 0) {
+            pdf.addImage(imgData, 'PNG', 0, y, imgWidth, imgHeight)
+            leftHeight -= pageHeight
+            if (leftHeight > 0) {
+              pdf.addPage()
+              y -= pageHeight
+            }
+          }
+        }
+        pdf.save('阿里云价格趋势图.pdf')
+        ElMessage.success('导出成功！')
+      } catch (err) {
+        ElMessage.error('导出失败: ' + err)
+      }
     }
 
     const clearChart = () => {
